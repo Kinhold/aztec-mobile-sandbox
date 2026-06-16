@@ -1,0 +1,8 @@
+[package]
+name = "basic_proof"
+type = "bin"
+authors = ["StationaryDev37"]
+compiler_version = "0.30"
+
+[dependencies]
+std = { tag = "v0.30.0" }
