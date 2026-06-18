@@ -1,0 +1,11 @@
+# Example witness data for age proof circuit
+# This demonstrates a 25-year-old user proving they are over 18
+
+# Private inputs
+birthdate = "631152000"  # January 1, 1990 (Unix timestamp)
+nonce = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+
+# Public inputs
+min_age = "18"
+current_timestamp = "1787500800"  # January 1, 2026 (Unix timestamp)
+age_commitment = "0x123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0"

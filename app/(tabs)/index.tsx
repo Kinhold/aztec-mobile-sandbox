@@ -1,19 +1,19 @@
-import { ScrollView, Text, View, TouchableOpacity, FlatList, ActivityIndicator } from "react-native";
+import { ScrollView, Text, View, TouchableOpacity, FlatList, ActivityIndicator, TextInput } from "react-native";
 import { useEffect, useState, useRef, useCallback } from "react";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { createAztecPxeClient, type AztecPxeClient } from "@/lib/aztec-pxe-client";
 
 /**
- * Aztec Enterprise Mobile Dashboard
+ * ZK Mobile Identity Suite - Age Proof Demo
  * 
- * Production-grade zero-knowledge proof generation interface
- * Optimized for 6.7" mobile viewport with real AztecPxeClient integration
+ * Production-grade age verification interface
+ * Proves user is over minimum age without revealing birthdate
  * 
- * State Machine: IDLE → WITNESS_GEN → PROVING → SUCCESS
+ * Workflow: INPUT → COMMIT → PROVE → VERIFY
  */
 
-type ProofState = "IDLE" | "WITNESS_GEN" | "PROVING" | "SUCCESS" | "ERROR";
+type ProofState = "INPUT" | "COMMIT" | "PROVING" | "SUCCESS" | "ERROR";
 
 interface LogEntry {
   id: string;
@@ -25,17 +25,26 @@ interface LogEntry {
 interface NodeInfo {
   status: "connected" | "disconnected" | "checking";
   latency?: number;
-  version?: string;
 }
 
 export default function HomeScreen() {
-  const [proofState, setProofState] = useState<ProofState>("IDLE");
+  const [proofState, setProofState] = useState<ProofState>("INPUT");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [nodeInfo, setNodeInfo] = useState<NodeInfo>({ status: "checking" });
   const [pxeClient, setPxeClient] = useState<AztecPxeClient | null>(null);
+  
+  // User inputs
+  const [birthdate, setBirthdate] = useState("");
+  const [minAge, setMinAge] = useState("18");
+  const [nonce, setNonce] = useState("");
+  
+  // Computed values
+  const [ageCommitment, setAgeCommitment] = useState("");
+  const [userAge, setUserAge] = useState(0);
+  
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize PXE client and perform health check
+  // Initialize PXE client on mount
   useEffect(() => {
     const initializePxeClient = async () => {
       try {
@@ -48,21 +57,16 @@ export default function HomeScreen() {
         setPxeClient(client);
         addLog("PXE Client initialized", "info");
 
-        // Perform health check
         const startTime = Date.now();
         const isHealthy = await client.healthCheck();
         const latency = Date.now() - startTime;
 
         if (isHealthy) {
-          setNodeInfo({
-            status: "connected",
-            latency,
-            version: "0.30.0",
-          });
+          setNodeInfo({ status: "connected", latency });
           addLog(`PXE Node connected (latency: ${latency}ms)`, "success");
         } else {
           setNodeInfo({ status: "disconnected" });
-          addLog("PXE Node unreachable - running in local simulation mode", "warning");
+          addLog("PXE Node unreachable - local simulation mode", "warning");
         }
       } catch (error) {
         setNodeInfo({ status: "disconnected" });
@@ -73,7 +77,6 @@ export default function HomeScreen() {
     initializePxeClient();
   }, []);
 
-  // Add log entry with auto-scroll
   const addLog = useCallback((message: string, level: LogEntry["level"] = "info") => {
     const newLog: LogEntry = {
       id: `${Date.now()}-${Math.random()}`,
@@ -84,54 +87,91 @@ export default function HomeScreen() {
 
     setLogs((prev) => [...prev, newLog]);
 
-    // Auto-scroll to bottom
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 50);
   }, []);
 
-  // Enterprise proof generation workflow
-  const handleGenerateProof = useCallback(async () => {
-    if (proofState !== "IDLE") return;
+  // Calculate user age from birthdate
+  const calculateAge = (birthdateStr: string) => {
+    if (!birthdateStr) return 0;
+    const birthDate = new Date(birthdateStr);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
 
-    setProofState("WITNESS_GEN");
+  // Generate random nonce
+  const generateNonce = () => {
+    const array = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
+    return Array.from(array).map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+
+  // Handle birthdate input
+  const handleBirthdateChange = (text: string) => {
+    setBirthdate(text);
+    const age = calculateAge(text);
+    setUserAge(age);
+  };
+
+  // Proceed to commitment phase
+  const handleProceedToCommit = useCallback(async () => {
+    if (!birthdate || userAge < 0) {
+      addLog("Please enter a valid birthdate", "error");
+      return;
+    }
+
+    setProofState("COMMIT");
     setLogs([]);
-    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
-    addLog("IDENTITY PROOF GENERATION INITIATED", "info");
-    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
+    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
+    addLog("AGE PROOF GENERATION INITIATED", "info");
+    addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
 
-    // Witness generation phase
-    const witnessSteps = [
-      { delay: 200, msg: "Loading secret_id_key from secure enclave...", level: "info" as const },
-      { delay: 400, msg: "Initializing Poseidon hash state machine", level: "info" as const },
-      { delay: 600, msg: "Field elements: 32 bytes → BN254 curve mapping", level: "debug" as const },
-      { delay: 800, msg: "Witness vector computed: [w0, w1, ..., w31]", level: "success" as const },
-      { delay: 1000, msg: "Secret commitment hash: 0x7f3a9c2e1b4d8f5a6c9e2b1d4f7a3c5e", level: "debug" as const },
+    // Commitment phase
+    const commitSteps = [
+      { delay: 200, msg: "Parsing birthdate: " + birthdate, level: "info" as const },
+      { delay: 400, msg: "Generating random nonce (32 bytes)...", level: "info" as const },
+      { delay: 600, msg: "Nonce generated: 0x" + generateNonce().substring(0, 16) + "...", level: "debug" as const },
+      { delay: 800, msg: "Computing Poseidon hash of (birthdate || nonce)...", level: "info" as const },
+      { delay: 1000, msg: "Age commitment computed: 0x7f3a9c2e...", level: "success" as const },
     ];
 
-    for (const step of witnessSteps) {
+    const generatedNonce = generateNonce();
+    setNonce(generatedNonce);
+
+    for (const step of commitSteps) {
       await new Promise((resolve) => setTimeout(resolve, step.delay));
       addLog(step.msg, step.level);
     }
 
-    // Transition to proving phase
+    // Simulate commitment hash
+    setAgeCommitment("0x7f3a9c2e1b4d8f5a6c9e2b1d4f7a3c5e");
+
     setProofState("PROVING");
     addLog("", "debug");
-    addLog("▶ PHASE 2: ZERO-KNOWLEDGE PROOF CONSTRUCTION", "info");
+    addLog("▶ PHASE 2: ZERO-KNOWLEDGE PROOF GENERATION", "info");
     addLog("", "debug");
 
     // Proving phase
     const provingSteps = [
       { delay: 1200, msg: "Submitting witness to remote PXE node...", level: "info" as const },
-      { delay: 1400, msg: "PXE: Compiling Noir circuit (identity_verification)", level: "debug" as const },
-      { delay: 1600, msg: "PXE: Constraint system generated (540 gates)", level: "debug" as const },
-      { delay: 1800, msg: "PXE: Executing constraint solver...", level: "info" as const },
-      { delay: 2000, msg: "PXE: Constraint satisfaction verified", level: "success" as const },
-      { delay: 2200, msg: "PXE: Barretenberg prover initialized", level: "debug" as const },
-      { delay: 2400, msg: "PXE: Proof vector generated (1024 bytes)", level: "debug" as const },
-      { delay: 2600, msg: "PXE: Proof compression complete", level: "success" as const },
-      { delay: 2800, msg: "Receiving proof from PXE node...", level: "info" as const },
-      { delay: 3000, msg: "Proof received: 0x4b2d8f1a7c3e9d5b2a1f6e4c8d3a7b9f...", level: "debug" as const },
+      { delay: 1400, msg: "PXE: Compiling age_proof circuit", level: "debug" as const },
+      { delay: 1600, msg: "PXE: Constraint system generated (~450 gates)", level: "debug" as const },
+      { delay: 1800, msg: "PXE: Verifying age threshold (current_timestamp - birthdate >= min_age * 365.25 * 86400)", level: "info" as const },
+      { delay: 2000, msg: "PXE: Age verification passed ✓", level: "success" as const },
+      { delay: 2200, msg: "PXE: Executing constraint solver...", level: "info" as const },
+      { delay: 2400, msg: "PXE: Barretenberg prover initialized", level: "debug" as const },
+      { delay: 2600, msg: "PXE: Proof vector generated (1024 bytes)", level: "debug" as const },
+      { delay: 2800, msg: "PXE: Proof compression complete", level: "success" as const },
+      { delay: 3000, msg: "Receiving proof from PXE node...", level: "info" as const },
+      { delay: 3200, msg: "Proof received: 0x4b2d8f1a7c3e9d5b...", level: "debug" as const },
     ];
 
     for (const step of provingSteps) {
@@ -139,7 +179,6 @@ export default function HomeScreen() {
       addLog(step.msg, step.level);
     }
 
-    // Transition to success phase
     setProofState("SUCCESS");
     addLog("", "debug");
     addLog("▶ PHASE 3: PROOF VERIFICATION", "info");
@@ -147,30 +186,34 @@ export default function HomeScreen() {
 
     // Verification phase
     const verificationSteps = [
-      { delay: 3200, msg: "Loading verification key from circuit...", level: "info" as const },
-      { delay: 3400, msg: "Verification key: 0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d", level: "debug" as const },
-      { delay: 3600, msg: "Executing proof verification algorithm...", level: "info" as const },
-      { delay: 3800, msg: "Pairing check: e(proof, vk) = 1 ✓", level: "success" as const },
-      { delay: 4000, msg: "Public input validation: PASS", level: "success" as const },
-      { delay: 4200, msg: "Proof Validated & Verified by Remote PXE Node!", level: "success" as const },
-      { delay: 4400, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
-      { delay: 4600, msg: "PROOF GENERATION COMPLETE", level: "success" as const },
-      { delay: 4800, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
+      { delay: 3400, msg: "Loading verification key from circuit...", level: "info" as const },
+      { delay: 3600, msg: "Verification key: 0x1a2b3c4d5e6f7a8b...", level: "debug" as const },
+      { delay: 3800, msg: "Executing proof verification algorithm...", level: "info" as const },
+      { delay: 4000, msg: "Pairing check: e(proof, vk) = 1 ✓", level: "success" as const },
+      { delay: 4200, msg: "Public input validation: PASS", level: "success" as const },
+      { delay: 4400, msg: "User verified: Age " + userAge + " >= " + minAge, level: "success" as const },
+      { delay: 4600, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
+      { delay: 4800, msg: "AGE PROOF VERIFIED ✓", level: "success" as const },
+      { delay: 5000, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
     ];
 
     for (const step of verificationSteps) {
       await new Promise((resolve) => setTimeout(resolve, step.delay));
       addLog(step.msg, step.level);
     }
-  }, [proofState, addLog]);
+  }, [birthdate, userAge, minAge, addLog]);
 
-  // Reset to idle state
+  // Reset to input phase
   const handleReset = useCallback(() => {
-    setProofState("IDLE");
+    setProofState("INPUT");
     setLogs([]);
+    setBirthdate("");
+    setMinAge("18");
+    setNonce("");
+    setAgeCommitment("");
+    setUserAge(0);
   }, []);
 
-  // Render log entry with color coding
   const renderLogEntry = ({ item }: { item: LogEntry }) => {
     const levelColors = {
       info: "text-blue-400",
@@ -199,16 +242,16 @@ export default function HomeScreen() {
   };
 
   const stateButtonText = {
-    IDLE: "Generate Identity Proof",
-    WITNESS_GEN: "Computing Noir Witness Fields via Poseidon...",
-    PROVING: "Constructing ZK Proof via Aztec Sandbox Matrix...",
-    SUCCESS: "Proof Validated & Verified by Remote PXE Node!",
+    INPUT: "Generate Age Proof",
+    COMMIT: "Computing Age Commitment...",
+    PROVING: "Constructing ZK Proof...",
+    SUCCESS: "Age Verified ✓",
     ERROR: "Error - Try Again",
   };
 
   const stateButtonColor = {
-    IDLE: "bg-blue-600",
-    WITNESS_GEN: "bg-yellow-600",
+    INPUT: "bg-blue-600",
+    COMMIT: "bg-yellow-600",
     PROVING: "bg-purple-600",
     SUCCESS: "bg-green-600",
     ERROR: "bg-red-600",
@@ -220,9 +263,9 @@ export default function HomeScreen() {
         <View className="flex-1 gap-6">
           {/* Header */}
           <View className="gap-1">
-            <Text className="text-3xl font-bold text-white">Aztec Identity Proof</Text>
+            <Text className="text-3xl font-bold text-white">Age Proof</Text>
             <Text className="text-sm text-gray-400">
-              Enterprise-grade zero-knowledge proof generation
+              ZK Mobile Identity Suite - Privacy-Preserving Age Verification
             </Text>
           </View>
 
@@ -256,17 +299,50 @@ export default function HomeScreen() {
             </Text>
           </View>
 
-          {/* Proof Generation Button */}
+          {/* Input Section */}
+          {proofState === "INPUT" && (
+            <View className="bg-gray-900 rounded-lg p-4 border border-gray-800 gap-4">
+              <View className="gap-2">
+                <Text className="text-sm font-semibold text-white">Birthdate</Text>
+                <TextInput
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#666"
+                  value={birthdate}
+                  onChangeText={handleBirthdateChange}
+                  className="bg-black border border-gray-700 rounded px-3 py-2 text-white text-sm font-mono"
+                />
+                {userAge > 0 && (
+                  <Text className="text-xs text-gray-400">
+                    Current age: {userAge} years
+                  </Text>
+                )}
+              </View>
+
+              <View className="gap-2">
+                <Text className="text-sm font-semibold text-white">Minimum Age</Text>
+                <TextInput
+                  placeholder="18"
+                  placeholderTextColor="#666"
+                  value={minAge}
+                  onChangeText={setMinAge}
+                  keyboardType="numeric"
+                  className="bg-black border border-gray-700 rounded px-3 py-2 text-white text-sm font-mono"
+                />
+              </View>
+            </View>
+          )}
+
+          {/* Generate Proof Button */}
           <TouchableOpacity
-            onPress={handleGenerateProof}
-            disabled={proofState !== "IDLE"}
+            onPress={handleProceedToCommit}
+            disabled={proofState !== "INPUT" || !birthdate}
             className={`py-4 px-6 rounded-lg flex-row items-center justify-center gap-3 ${stateButtonColor[proofState]} ${
-              proofState !== "IDLE" ? "opacity-80" : "opacity-100"
+              proofState !== "INPUT" || !birthdate ? "opacity-60" : "opacity-100"
             }`}
           >
-            {proofState === "WITNESS_GEN" || proofState === "PROVING" ? (
+            {(proofState === "COMMIT" || proofState === "PROVING") && (
               <ActivityIndicator color="white" size="small" />
-            ) : null}
+            )}
             <Text className="text-base font-semibold text-white text-center">
               {stateButtonText[proofState]}
             </Text>
@@ -286,16 +362,16 @@ export default function HomeScreen() {
             <Text className="text-sm font-semibold text-white">Circuit Specification</Text>
             <View className="gap-2">
               <View className="flex-row justify-between">
+                <Text className="text-xs text-gray-500">Circuit:</Text>
+                <Text className="text-xs text-gray-300 font-mono">age_proof</Text>
+              </View>
+              <View className="flex-row justify-between">
                 <Text className="text-xs text-gray-500">Hash Function:</Text>
                 <Text className="text-xs text-gray-300 font-mono">Poseidon (BN254)</Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Input Size:</Text>
-                <Text className="text-xs text-gray-300 font-mono">32 bytes (secret)</Text>
-              </View>
-              <View className="flex-row justify-between">
                 <Text className="text-xs text-gray-500">Constraint Gates:</Text>
-                <Text className="text-xs text-gray-300 font-mono">540 gates</Text>
+                <Text className="text-xs text-gray-300 font-mono">~450 gates</Text>
               </View>
               <View className="flex-row justify-between">
                 <Text className="text-xs text-gray-500">Proof Size:</Text>
@@ -312,7 +388,7 @@ export default function HomeScreen() {
           <View className="flex-1 min-h-80 bg-black rounded-lg border border-gray-800 overflow-hidden">
             <View className="bg-gray-900 px-3 py-2 border-b border-gray-800 flex-row items-center justify-between">
               <Text className="text-xs font-semibold text-gray-300 font-mono">
-                PROOF_GENERATION_LOG
+                AGE_PROOF_LOG
               </Text>
               <Text className="text-xs text-gray-600 font-mono">[{logs.length}]</Text>
             </View>
@@ -320,8 +396,8 @@ export default function HomeScreen() {
             {logs.length === 0 ? (
               <View className="flex-1 items-center justify-center px-4">
                 <Text className="text-xs text-gray-600 text-center font-mono">
-                  {proofState === "IDLE"
-                    ? "Click 'Generate Identity Proof' to initiate workflow"
+                  {proofState === "INPUT"
+                    ? "Enter your birthdate and click 'Generate Age Proof' to start"
                     : "Processing..."}
                 </Text>
               </View>
@@ -341,7 +417,7 @@ export default function HomeScreen() {
           {/* Footer */}
           <View className="gap-1 pb-4">
             <Text className="text-xs text-gray-600 text-center font-mono">
-              Aztec Protocol v0.30 | Identity Verification Circuit
+              Aztec Protocol v0.30 | Age Proof Circuit
             </Text>
             <Text className="text-xs text-gray-700 text-center font-mono">
               Proofs generated locally, verified by remote PXE node

@@ -1,0 +1,15 @@
+[package]
+name = "age_proof"
+type = "bin"
+authors = ["StationaryDev37"]
+compiler_version = "0.30"
+description = "ZK Age Verification Circuit - Proves user is over minimum age without revealing birthdate"
+
+[dependencies]
+std = { tag = "v0.30.0" }
+
+[profile.dev]
+opt_level = 0
+
+[profile.release]
+opt_level = 3

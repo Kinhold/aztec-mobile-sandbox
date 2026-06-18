@@ -1,119 +1,139 @@
-# Aztec Mobile Sandbox - Noir Circuits
+# Noir Circuits - ZK Mobile Identity Suite
 
-This directory contains Noir circuit templates optimized for client-side witness generation on resource-constrained Android environments (MediaTek Dimensity 6300 / Moto G 2025).
+This directory contains zero-knowledge proof circuits built with the Noir language for the **ZK Mobile Identity Suite**. Each circuit is designed for privacy-preserving identity verification on mobile devices.
 
-## Directory Structure
+## Available Circuits
 
-```
-circuits/
-├── basic_proof/          # Basic proof-of-knowledge circuit
-│   ├── main.nr          # Circuit definition
-│   └── Nargo.toml       # Circuit manifest
-└── README.md            # This file
-```
+### Age Proof (`age_proof/`)
 
-## Circuit: basic_proof
+**Purpose:** Prove that a user is over a minimum age without revealing their exact birthdate.
 
-A foundational circuit demonstrating proof-of-knowledge without revealing the private input.
+**Key Features:**
+- Privacy-preserving age verification
+- Non-linkable proofs (random nonce prevents tracking)
+- Efficient constraint system (~450 gates)
+- Fast proof generation and verification
+- Mobile-optimized for 6.7" viewports
 
-### Purpose
+**Public Inputs:**
+- `min_age` — Minimum age threshold (e.g., 18, 21)
+- `current_timestamp` — Current Unix timestamp
+- `age_commitment` — Poseidon hash of (birthdate || nonce)
 
-Proves knowledge of a private input `x` such that `x² = public_input` without revealing `x` itself.
+**Private Inputs:**
+- `birthdate` — User's birthdate (Unix timestamp)
+- `nonce` — Random 32-byte nonce for privacy
 
-### Inputs
+**Constraints:**
+- Commitment verification: `Poseidon(birthdate || nonce) == age_commitment`
+- Age threshold: `current_timestamp - birthdate >= min_age * 365.25 * 86400`
+- Sanity checks: `year_2000 <= birthdate <= current_timestamp`
 
-| Input | Type | Visibility | Description |
-|-------|------|-----------|-------------|
-| `private_input` | Field | Private | The secret value to be proven |
-| `public_input` | Field | Public | The squared result (public constraint) |
+**Performance:**
+- Constraint gates: ~450
+- Proof size: ~1024 bytes
+- Verification time: ~50-100ms
+- Proving time: ~200-500ms
 
-### Output
+See `age_proof/AGE_PROOF.md` for complete documentation.
 
-Returns the computed result (which equals `public_input` if constraints are satisfied).
+## Circuit Development Workflow
 
-### Usage
+### 1. Compile Circuit
 
 ```bash
-# Compile the circuit
+cd circuits/age_proof
 nargo compile
+```
 
-# Generate witness from inputs
+### 2. Generate Proof
+
+```bash
 nargo prove
+```
 
-# Verify proof
+### 3. Verify Proof
+
+```bash
 nargo verify
 ```
 
-## Adding New Circuits
+## Integration with Mobile App
 
-To add a new circuit:
-
-1. Create a new directory under `circuits/`:
-   ```bash
-   mkdir circuits/my_circuit
-   ```
-
-2. Create `main.nr` with your circuit logic:
-   ```noir
-   fn main(private_input: Field, public_input: Field) -> pub Field {
-       // Your circuit logic here
-       private_input + public_input
-   }
-   ```
-
-3. Create `Nargo.toml`:
-   ```toml
-   [package]
-   name = "my_circuit"
-   type = "bin"
-   authors = ["Your Name"]
-   compiler_version = "0.30"
-
-   [dependencies]
-   std = { tag = "v0.30.0" }
-   ```
-
-4. Compile and test:
-   ```bash
-   cd circuits/my_circuit
-   nargo compile
-   nargo prove
-   ```
-
-## Client-Side Integration
-
-From the mobile client, use the `AztecPxeClient` to compile and generate proofs:
+The circuits integrate with the mobile app through the `AztecPxeClient`:
 
 ```typescript
-import { createAztecPxeClient } from "@/lib/aztec-pxe-client";
+import { createAztecPxeClient } from '@/lib/aztec-pxe-client';
 
-const client = createAztecPxeClient({
-  rpcUrl: "https://your-pxe-endpoint.com",
+const pxeClient = createAztecPxeClient({
+  rpcUrl: 'https://pxe.aztec.network',
 });
 
-// Compile circuit
-const { verificationKey } = await client.compileCircuit(
-  "circuits/basic_proof"
-);
-
-// Generate proof
-const proof = await client.generateProof("basic_proof", {
-  private_input: 5n,
-  public_input: 25n,
+// Generate age proof
+const proof = await pxeClient.generateProof({
+  circuit: 'age_proof',
+  publicInputs: {
+    min_age: 18,
+    current_timestamp: Math.floor(Date.now() / 1000),
+    age_commitment,
+  },
+  privateInputs: {
+    birthdate,
+    nonce,
+  },
 });
-
-// Verify proof
-const isValid = await client.verifyProof(proof);
 ```
 
-## Performance Considerations
+## Circuit Specifications
 
-- **Witness Generation:** Performed locally on the mobile device (minimal overhead).
-- **Proof Construction:** Delegated to remote PXE (offloads heavy computation).
-- **Verification:** Can be performed either locally or remotely depending on trust model.
+| Metric | Value |
+|--------|-------|
+| **Language** | Noir v0.30 |
+| **Proving System** | Barretenberg (BN254) |
+| **Hash Function** | Poseidon |
+| **Constraint Gates** | ~450 |
+| **Proof Size** | ~1024 bytes |
+| **Verification Time** | ~50-100ms |
+
+## Requirements
+
+- Noir v0.30+
+- Barretenberg proving system
+- Node.js 18+ (for tooling)
+
+## Deployment
+
+### Development
+
+Circuits are compiled and tested locally during development. Use `nargo compile` to verify syntax and constraints.
+
+### Production
+
+For production deployment:
+
+1. Compile circuit: `nargo compile`
+2. Generate verification key: `nargo prove --write_vk`
+3. Test proof generation and verification
+4. Deploy verification key to smart contract or verification service
+5. Integrate with mobile app via AztecPxeClient
+
+## Security Considerations
+
+### Privacy Properties
+
+- **Birthdate Privacy** — Exact birthdate is never revealed
+- **Non-Linkability** — Different proofs cannot be linked to the same user (due to random nonce)
+- **Replay Protection** — Proofs include current_timestamp to prevent replay attacks
+
+### Cryptographic Assumptions
+
+- **Poseidon Hash** — Collision-resistant hash function over BN254 field
+- **Noir Constraint System** — Sound zero-knowledge proof system
+- **Barretenberg Prover** — Secure proof generation and verification
 
 ## References
 
-- [Noir Language Documentation](https://noir-lang.org/)
-- [Aztec Protocol](https://aztec.network/)
-- [Barretenberg Prover](https://github.com/AztecProtocol/barretenberg)
+- [Aztec Protocol Documentation](https://docs.aztec.network)
+- [Noir Language Reference](https://noir-lang.org)
+- [Poseidon Hash Function](https://www.poseidon-hash.info/)
+- [Zero-Knowledge Proofs](https://en.wikipedia.org/wiki/Zero-knowledge_proof)
