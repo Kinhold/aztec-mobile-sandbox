@@ -6,7 +6,7 @@
  * while maintaining full cryptographic privacy boundaries via client-side transaction hashing.
  */
 
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosError } from "axios";
 
 /**
  * JSON-RPC 2.0 Request structure
@@ -30,6 +30,20 @@ interface JsonRpcResponse<T = unknown> {
     data?: unknown;
   };
   id: string | number;
+}
+
+/**
+ * Custom RPC Error class for better error handling and identification
+ */
+export class AztecRpcError extends Error {
+  constructor(
+    public code: number,
+    message: string,
+    public data?: unknown
+  ) {
+    super(message);
+    this.name = "AztecRpcError";
+  }
 }
 
 /**
@@ -134,14 +148,36 @@ export class AztecPxeClient {
         );
 
         if (response.data.error) {
-          throw new Error(
-            `RPC Error: ${response.data.error.message} (code: ${response.data.error.code})`
+          throw new AztecRpcError(
+            response.data.error.code,
+            response.data.error.message,
+            response.data.error.data
           );
+        }
+
+        if (response.data.result === undefined) {
+          throw new Error("Invalid JSON-RPC response: missing result");
         }
 
         return response.data.result as T;
       } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
+        if (error instanceof AztecRpcError) {
+          // RPC-level errors should probably not be retried as they indicate logic/input issues
+          throw error;
+        }
+
+        if (axios.isAxiosError(error)) {
+          const axiosError = error as AxiosError;
+          lastError = new Error(
+            `Network Error: ${axiosError.message}${
+              axiosError.response
+                ? ` (Status: ${axiosError.response.status})`
+                : ""
+            }`
+          );
+        } else {
+          lastError = error instanceof Error ? error : new Error(String(error));
+        }
 
         if (attempt < this.config.retryAttempts - 1) {
           await this.delay(this.config.retryDelay * Math.pow(2, attempt));
