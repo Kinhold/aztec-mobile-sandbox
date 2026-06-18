@@ -1,0 +1,11 @@
+# Prover.toml - Witness inputs for identity_verification circuit
+# This file contains example witness data for testing the circuit
+
+# Private input: 32-byte secret identity key (hex-encoded)
+# Example: a randomly generated 32-byte secret
+secret_id_key = "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+
+# Public input: Expected identity hash (Poseidon hash of secret_id_key)
+# This should be computed as: poseidon_hash(secret_id_key)
+# For testing, use the actual hash value computed locally
+expected_identity_hash = "0x0000000000000000000000000000000000000000000000000000000000000001"
