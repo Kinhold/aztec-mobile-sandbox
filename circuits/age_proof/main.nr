@@ -1,132 +1,62 @@
-// Age Proof Circuit - ZK Mobile Identity Suite
-// Proves that a user is over a minimum age without revealing their exact birthdate
+// Age Proof Circuit - Year-Based Age Verification
+// Proves: current_year - birth_year >= threshold
+// Without revealing birth_year
+//
+// Private Input:
+//   - birth_year: User's birth year (e.g., 1990)
 //
 // Public Inputs:
-//   - min_age: Minimum age threshold (e.g., 18, 21)
-//   - current_timestamp: Current Unix timestamp
-//   - age_commitment: Hash of (birthdate || nonce)
+//   - current_year: Current year (e.g., 2026)
+//   - threshold: Minimum age requirement (e.g., 18)
 //
-// Private Inputs:
-//   - birthdate: User's birthdate (Unix timestamp)
-//   - nonce: Random nonce for privacy
-//
-// Constraint: current_timestamp - birthdate >= min_age * 365.25 * 86400 (seconds in a year)
-
-use std::hash::poseidon::bn254::hash_to_field;
+// Constraint: current_year - birth_year >= threshold
 
 fn main(
-    private_input birthdate: u64,
-    private_input nonce: [u8; 32],
-    public_input min_age: u32,
-    public_input current_timestamp: u64,
-    public_input age_commitment: Field,
-) -> pub Field {
-    // Verify the age commitment matches the private birthdate and nonce
-    let commitment_preimage = [birthdate as u8; 8];
-    let mut combined = [0u8; 40];
+    private_input birth_year: u32,
+    public_input current_year: u32,
+    public_input threshold: u32,
+) -> pub u32 {
+    // Constraint 1: Calculate age
+    let age = current_year - birth_year;
     
-    // Copy birthdate bytes (8 bytes)
-    for i in 0..8 {
-        combined[i] = commitment_preimage[i];
-    }
+    // Constraint 2: Verify age meets threshold
+    assert(age >= threshold, "Age does not meet threshold");
     
-    // Copy nonce bytes (32 bytes)
-    for i in 0..32 {
-        combined[8 + i] = nonce[i];
-    }
+    // Constraint 3: Sanity check - birth year must be reasonable
+    // Assume no one born before 1900 (126 years old in 2026)
+    assert(birth_year >= 1900, "Birth year is unrealistic (too old)");
     
-    // Compute Poseidon hash of (birthdate || nonce)
-    let computed_commitment = hash_to_field(combined);
+    // Constraint 4: Birth year cannot be in the future
+    assert(birth_year <= current_year, "Birth year cannot be in the future");
     
-    // Constraint 1: Commitment must match
-    assert_eq(computed_commitment, age_commitment, "Age commitment mismatch");
-    
-    // Constraint 2: User must be at least min_age years old
-    // Calculate minimum birthdate for the given age threshold
-    let seconds_per_year = 31557600; // 365.25 days in seconds
-    let min_age_seconds = (min_age as u64) * seconds_per_year;
-    let minimum_birthdate = current_timestamp - min_age_seconds;
-    
-    // Verify birthdate is old enough
-    assert(birthdate <= minimum_birthdate, "User is not old enough");
-    
-    // Constraint 3: Birthdate must be reasonable (not in the future, not before 1900)
-    let year_1900_timestamp = 946684800; // Jan 1, 2000 Unix timestamp (conservative)
-    assert(birthdate >= year_1900_timestamp, "Birthdate is unrealistic");
-    assert(birthdate <= current_timestamp, "Birthdate cannot be in the future");
-    
-    // Return proof of age verification (1 = verified)
-    1
+    // Return the computed age as proof output
+    age
 }
 
-// Helper function to verify multiple age thresholds
-fn verify_multiple_ages(
-    private_input birthdate: u64,
-    private_input nonce: [u8; 32],
-    public_input age_thresholds: [u32; 4],
-    public_input current_timestamp: u64,
-    public_input age_commitment: Field,
-) -> pub [u8; 4] {
-    let mut results = [0u8; 4];
-    let seconds_per_year = 31557600;
-    
-    // Verify commitment once
-    let commitment_preimage = [birthdate as u8; 8];
-    let mut combined = [0u8; 40];
-    for i in 0..8 {
-        combined[i] = commitment_preimage[i];
-    }
-    for i in 0..32 {
-        combined[8 + i] = nonce[i];
-    }
-    let computed_commitment = hash_to_field(combined);
-    assert_eq(computed_commitment, age_commitment, "Age commitment mismatch");
-    
-    // Check each age threshold
-    for i in 0..4 {
-        let min_age_seconds = (age_thresholds[i] as u64) * seconds_per_year;
-        let minimum_birthdate = current_timestamp - min_age_seconds;
-        
-        if birthdate <= minimum_birthdate {
-            results[i] = 1;
-        }
-    }
-    
-    results
+// Test helper: Verify age without revealing birth year
+fn verify_age_threshold(
+    private_input birth_year: u32,
+    public_input current_year: u32,
+    public_input threshold: u32,
+) -> pub bool {
+    let age = current_year - birth_year;
+    age >= threshold
 }
 
-// Helper function to prove age range (e.g., between 18 and 65)
-fn verify_age_range(
-    private_input birthdate: u64,
-    private_input nonce: [u8; 32],
-    public_input min_age: u32,
-    public_input max_age: u32,
-    public_input current_timestamp: u64,
-    public_input age_commitment: Field,
-) -> pub Field {
-    let seconds_per_year = 31557600;
-    
-    // Verify commitment
-    let commitment_preimage = [birthdate as u8; 8];
-    let mut combined = [0u8; 40];
-    for i in 0..8 {
-        combined[i] = commitment_preimage[i];
-    }
-    for i in 0..32 {
-        combined[8 + i] = nonce[i];
-    }
-    let computed_commitment = hash_to_field(combined);
-    assert_eq(computed_commitment, age_commitment, "Age commitment mismatch");
-    
-    // Verify age is within range
-    let min_age_seconds = (min_age as u64) * seconds_per_year;
-    let max_age_seconds = (max_age as u64) * seconds_per_year;
-    
-    let min_birthdate = current_timestamp - min_age_seconds;
-    let max_birthdate = current_timestamp - max_age_seconds;
-    
-    assert(birthdate <= min_birthdate, "User is too young");
-    assert(birthdate >= max_birthdate, "User is too old");
-    
-    1
+// Test helper: Check if user is exactly at threshold
+fn is_exactly_threshold(
+    private_input birth_year: u32,
+    public_input current_year: u32,
+    public_input threshold: u32,
+) -> pub bool {
+    let age = current_year - birth_year;
+    age == threshold
+}
+
+// Test helper: Get user's computed age (for verification only)
+fn get_age(
+    private_input birth_year: u32,
+    public_input current_year: u32,
+) -> pub u32 {
+    current_year - birth_year
 }
