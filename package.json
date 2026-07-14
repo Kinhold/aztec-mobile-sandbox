@@ -3,6 +3,7 @@
   "description": "Expo sandbox for evaluating mobile UX around an experimental Aztec-compatible PXE adapter",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "main": "expo-router/entry",
   "scripts": {
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:metro\"",
