@@ -1,6 +1,6 @@
 // Aztec Mobile Sandbox - Identity Verification Circuit
-// Production-grade Noir circuit for cryptographic identity verification
-// Uses Poseidon hashing to verify that a private secret_id_key matches an expected_identity_hash
+// Unverified design sketch; this repository does not compile or execute it.
+// Intended to compare a private secret_id_key with an expected identity hash.
 
 use dep::std;
 

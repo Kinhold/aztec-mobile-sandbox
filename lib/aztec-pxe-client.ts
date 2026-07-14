@@ -1,9 +1,9 @@
 /**
- * Aztec PXE JSON-RPC Client
+ * Experimental PXE-like JSON-RPC adapter
  *
- * A lean, asynchronous JSON-RPC connector optimized for resource-constrained Android environments.
- * Delegates state synchronization and proof construction to a remote Aztec Private eXecution Environment (PXE)
- * while maintaining full cryptographic privacy boundaries via client-side transaction hashing.
+ * The method names and response types in this file are a local prototype
+ * contract. They are not provided by an installed Aztec SDK and have not been
+ * validated against a real PXE endpoint.
  */
 
 import axios, { AxiosInstance } from "axios";
@@ -75,11 +75,7 @@ export interface AztecPxeClientConfig {
 }
 
 /**
- * AztecPxeClient: Secure JSON-RPC connector to remote Aztec PXE
- *
- * This client establishes an asynchronous connection to a remote Aztec Private eXecution Environment,
- * enabling resource-constrained Android devices to offload heavy state-proving operations while
- * maintaining cryptographic privacy through client-side transaction hashing.
+ * Thin JSON-RPC connector for an explicitly configured, compatible adapter.
  */
 export class AztecPxeClient {
   private rpcClient: AxiosInstance;
@@ -115,7 +111,7 @@ export class AztecPxeClient {
    */
   private async executeRpc<T>(
     method: string,
-    params: unknown[] = []
+    params: unknown[] = [],
   ): Promise<T> {
     let lastError: Error | null = null;
 
@@ -130,12 +126,12 @@ export class AztecPxeClient {
 
         const response = await this.rpcClient.post<JsonRpcResponse<T>>(
           "/",
-          request
+          request,
         );
 
         if (response.data.error) {
           throw new Error(
-            `RPC Error: ${response.data.error.message} (code: ${response.data.error.code})`
+            `RPC Error: ${response.data.error.message} (code: ${response.data.error.code})`,
           );
         }
 
@@ -212,7 +208,7 @@ export class AztecPxeClient {
    */
   async generateProof(
     circuitName: string,
-    witness: Record<string, unknown>
+    witness: Record<string, unknown>,
   ): Promise<AztecProof> {
     return this.executeRpc<AztecProof>("pxe_generateProof", [
       circuitName,
@@ -255,7 +251,7 @@ export class AztecPxeClient {
     try {
       const result = await this.executeRpc<{ status: string }>(
         "pxe_healthCheck",
-        []
+        [],
       );
       return result.status === "healthy";
     } catch {
@@ -268,7 +264,7 @@ export class AztecPxeClient {
  * Factory function to create an AztecPxeClient instance
  */
 export function createAztecPxeClient(
-  config: AztecPxeClientConfig
+  config: AztecPxeClientConfig,
 ): AztecPxeClient {
   return new AztecPxeClient(config);
 }

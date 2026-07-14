@@ -1,5 +1,6 @@
 {
-  "name": "app-template",
+  "name": "@kinhold/aztec-mobile-sandbox",
+  "description": "Expo sandbox for evaluating mobile UX around an experimental Aztec-compatible PXE adapter",
   "version": "1.0.0",
   "private": true,
   "main": "expo-router/entry",
@@ -7,8 +8,8 @@
     "dev": "concurrently -k \"pnpm dev:server\" \"pnpm dev:metro\"",
     "dev:server": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
     "dev:metro": "cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 npx expo start --web --port ${EXPO_PORT:-8081}",
-    "build": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
-    "start": "NODE_ENV=production node dist/index.js",
+    "build": "esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist --out-extension:.js=.mjs",
+    "start": "NODE_ENV=production node dist/index.mjs",
     "check": "tsc --noEmit",
     "lint": "expo lint",
     "format": "prettier --write .",

@@ -2,11 +2,38 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "../../shared/const.js";
 import type { Express, Request, Response } from "express";
 import { getUserByOpenId, upsertUser } from "../db";
 import { getSessionCookieOptions } from "./cookies";
+import { ENV } from "./env";
 import { sdk } from "./sdk";
+import {
+  getAllowedRedirectUri,
+  getFrontendRedirectUrl,
+  parseOAuthRedirectAllowlist,
+} from "./security";
 
 function getQueryParam(req: Request, key: string): string | undefined {
   const value = req.query[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function getBodyParam(req: Request, key: string): string | undefined {
+  const body = req.body as Record<string, unknown> | undefined;
+  const value = body?.[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function hasAllowedOAuthState(state: string, res: Response): boolean {
+  try {
+    getAllowedRedirectUri(
+      state,
+      parseOAuthRedirectAllowlist(ENV.oAuthAllowedRedirectUris),
+    );
+    return true;
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "OAuth state is invalid",
+    });
+    return false;
+  }
 }
 
 async function syncUser(userInfo: {
@@ -70,6 +97,7 @@ export function registerOAuthRoutes(app: Express) {
       res.status(400).json({ error: "code and state are required" });
       return;
     }
+    if (!hasAllowedOAuthState(state, res)) return;
 
     try {
       const tokenResponse = await sdk.exchangeCodeForToken(code, state);
@@ -81,14 +109,15 @@ export function registerOAuthRoutes(app: Express) {
       });
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...cookieOptions,
+        maxAge: ONE_YEAR_MS,
+      });
 
-      // Redirect to the frontend URL (Expo web on port 8081)
-      // Cookie is set with parent domain so it works across both 3000 and 8081 subdomains
-      const frontendUrl =
-        process.env.EXPO_WEB_PREVIEW_URL ||
-        process.env.EXPO_PACKAGER_PROXY_URL ||
-        "http://localhost:8081";
+      const frontendUrl = getFrontendRedirectUrl(
+        ENV.oAuthFrontendRedirectUrl,
+        ENV.isProduction,
+      );
       res.redirect(302, frontendUrl);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
@@ -96,14 +125,15 @@ export function registerOAuthRoutes(app: Express) {
     }
   });
 
-  app.get("/api/oauth/mobile", async (req: Request, res: Response) => {
-    const code = getQueryParam(req, "code");
-    const state = getQueryParam(req, "state");
+  app.post("/api/oauth/mobile", async (req: Request, res: Response) => {
+    const code = getBodyParam(req, "code");
+    const state = getBodyParam(req, "state");
 
     if (!code || !state) {
       res.status(400).json({ error: "code and state are required" });
       return;
     }
+    if (!hasAllowedOAuthState(state, res)) return;
 
     try {
       const tokenResponse = await sdk.exchangeCodeForToken(code, state);
@@ -116,7 +146,10 @@ export function registerOAuthRoutes(app: Express) {
       });
 
       const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      res.cookie(COOKIE_NAME, sessionToken, {
+        ...cookieOptions,
+        maxAge: ONE_YEAR_MS,
+      });
 
       res.json({
         app_session_id: sessionToken,
@@ -142,33 +175,6 @@ export function registerOAuthRoutes(app: Express) {
     } catch (error) {
       console.error("[Auth] /api/auth/me failed:", error);
       res.status(401).json({ error: "Not authenticated", user: null });
-    }
-  });
-
-  // Establish session cookie from Bearer token
-  // Used by iframe preview: frontend receives token via postMessage, then calls this endpoint
-  // to get a proper Set-Cookie response from the backend (3000-xxx domain)
-  app.post("/api/auth/session", async (req: Request, res: Response) => {
-    try {
-      // Authenticate using Bearer token from Authorization header
-      const user = await sdk.authenticateRequest(req);
-
-      // Get the token from the Authorization header to set as cookie
-      const authHeader = req.headers.authorization || req.headers.Authorization;
-      if (typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
-        res.status(400).json({ error: "Bearer token required" });
-        return;
-      }
-      const token = authHeader.slice("Bearer ".length).trim();
-
-      // Set cookie for this domain (3000-xxx)
-      const cookieOptions = getSessionCookieOptions(req);
-      res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-
-      res.json({ success: true, user: buildUserResponse(user) });
-    } catch (error) {
-      console.error("[Auth] /api/auth/session failed:", error);
-      res.status(401).json({ error: "Invalid token" });
     }
   });
 }

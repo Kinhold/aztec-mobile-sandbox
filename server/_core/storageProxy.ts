@@ -1,16 +1,34 @@
 import type { Express } from "express";
 import { ENV } from "./env";
+import { sdk } from "./sdk";
+
+function isSafeStorageKey(key: string): boolean {
+  return (
+    key.length <= 1024 &&
+    !key.includes("\0") &&
+    key
+      .split("/")
+      .every((segment) => segment !== "" && segment !== "." && segment !== "..")
+  );
+}
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
     const key = (req.params as Record<string, string>)[0];
-    if (!key) {
-      res.status(400).send("Missing storage key");
+    if (!key || !isSafeStorageKey(key)) {
+      res.status(400).send("Invalid storage key");
       return;
     }
 
     if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
       res.status(500).send("Storage proxy not configured");
+      return;
+    }
+
+    try {
+      await sdk.authenticateRequest(req);
+    } catch {
+      res.status(401).send("Authentication required");
       return;
     }
 
@@ -27,7 +45,9 @@ export function registerStorageProxy(app: Express) {
 
       if (!forgeResp.ok) {
         const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
+        console.error(
+          `[StorageProxy] forge error: ${forgeResp.status} ${body}`,
+        );
         res.status(502).send("Storage backend error");
         return;
       }

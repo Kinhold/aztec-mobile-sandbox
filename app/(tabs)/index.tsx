@@ -1,16 +1,18 @@
-import { ScrollView, Text, View, TouchableOpacity, FlatList, ActivityIndicator } from "react-native";
+import {
+  ScrollView,
+  Text,
+  View,
+  TouchableOpacity,
+  FlatList,
+  ActivityIndicator,
+} from "react-native";
 import { useEffect, useState, useRef, useCallback } from "react";
 
 import { ScreenContainer } from "@/components/screen-container";
-import { createAztecPxeClient, type AztecPxeClient } from "@/lib/aztec-pxe-client";
+import { createAztecPxeClient } from "@/lib/aztec-pxe-client";
 
 /**
- * Aztec Enterprise Mobile Dashboard
- * 
- * Production-grade zero-knowledge proof generation interface
- * Optimized for 6.7" mobile viewport with real AztecPxeClient integration
- * 
- * State Machine: IDLE → WITNESS_GEN → PROVING → SUCCESS
+ * UX-only proof flow simulation. This screen does not generate or verify a proof.
  */
 
 type ProofState = "IDLE" | "WITNESS_GEN" | "PROVING" | "SUCCESS" | "ERROR";
@@ -23,32 +25,56 @@ interface LogEntry {
 }
 
 interface NodeInfo {
-  status: "connected" | "disconnected" | "checking";
+  status: "connected" | "disconnected" | "checking" | "not_configured";
   latency?: number;
-  version?: string;
 }
 
 export default function HomeScreen() {
   const [proofState, setProofState] = useState<ProofState>("IDLE");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [nodeInfo, setNodeInfo] = useState<NodeInfo>({ status: "checking" });
-  const [pxeClient, setPxeClient] = useState<AztecPxeClient | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
-  // Initialize PXE client and perform health check
+  const addLog = useCallback(
+    (message: string, level: LogEntry["level"] = "info") => {
+      const newLog: LogEntry = {
+        id: `${Date.now()}-${Math.random()}`,
+        timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        message,
+        level,
+      };
+
+      setLogs((prev) => [...prev, newLog]);
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    },
+    [],
+  );
+
+  // This optional probe uses an experimental adapter contract. A successful
+  // response is connectivity evidence, not proof-generation compatibility.
   useEffect(() => {
     const initializePxeClient = async () => {
+      const rpcUrl = process.env.EXPO_PUBLIC_PXE_RPC_URL;
+      if (!rpcUrl) {
+        setNodeInfo({ status: "not_configured" });
+        addLog(
+          "No PXE adapter configured; simulation is available offline",
+          "warning",
+        );
+        return;
+      }
+
       try {
         const client = createAztecPxeClient({
-          rpcUrl: process.env.EXPO_PUBLIC_PXE_RPC_URL || "https://pxe.aztec.network",
+          rpcUrl,
           timeout: 8000,
           retryAttempts: 2,
         });
 
-        setPxeClient(client);
-        addLog("PXE Client initialized", "info");
+        addLog("Experimental PXE adapter initialized", "info");
 
-        // Perform health check
         const startTime = Date.now();
         const isHealthy = await client.healthCheck();
         const latency = Date.now() - startTime;
@@ -57,56 +83,57 @@ export default function HomeScreen() {
           setNodeInfo({
             status: "connected",
             latency,
-            version: "0.30.0",
           });
-          addLog(`PXE Node connected (latency: ${latency}ms)`, "success");
+          addLog(
+            `Adapter health probe answered (${latency}ms); compatibility is unverified`,
+            "success",
+          );
         } else {
           setNodeInfo({ status: "disconnected" });
-          addLog("PXE Node unreachable - running in local simulation mode", "warning");
+          addLog("PXE adapter health probe did not succeed", "warning");
         }
-      } catch (error) {
+      } catch {
         setNodeInfo({ status: "disconnected" });
-        addLog("PXE initialization failed - local mode active", "warning");
+        addLog(
+          "PXE adapter initialization failed; simulation remains offline",
+          "warning",
+        );
       }
     };
 
     initializePxeClient();
-  }, []);
+  }, [addLog]);
 
-  // Add log entry with auto-scroll
-  const addLog = useCallback((message: string, level: LogEntry["level"] = "info") => {
-    const newLog: LogEntry = {
-      id: `${Date.now()}-${Math.random()}`,
-      timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-      message,
-      level,
-    };
-
-    setLogs((prev) => [...prev, newLog]);
-
-    // Auto-scroll to bottom
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 50);
-  }, []);
-
-  // Enterprise proof generation workflow
+  // Simulates UI state transitions only. Deliberately does not call generateProof.
   const handleGenerateProof = useCallback(async () => {
     if (proofState !== "IDLE") return;
 
     setProofState("WITNESS_GEN");
     setLogs([]);
     addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
-    addLog("IDENTITY PROOF GENERATION INITIATED", "info");
+    addLog(
+      "SIMULATION STARTED — NO CRYPTOGRAPHIC PROOF WILL BE CREATED",
+      "warning",
+    );
     addLog("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "debug");
 
     // Witness generation phase
     const witnessSteps = [
-      { delay: 200, msg: "Loading secret_id_key from secure enclave...", level: "info" as const },
-      { delay: 400, msg: "Initializing Poseidon hash state machine", level: "info" as const },
-      { delay: 600, msg: "Field elements: 32 bytes → BN254 curve mapping", level: "debug" as const },
-      { delay: 800, msg: "Witness vector computed: [w0, w1, ..., w31]", level: "success" as const },
-      { delay: 1000, msg: "Secret commitment hash: 0x7f3a9c2e1b4d8f5a6c9e2b1d4f7a3c5e", level: "debug" as const },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Load a private input",
+        level: "info" as const,
+      },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Map inputs to circuit fields",
+        level: "info" as const,
+      },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Construct a witness",
+        level: "success" as const,
+      },
     ];
 
     for (const step of witnessSteps) {
@@ -117,21 +144,26 @@ export default function HomeScreen() {
     // Transition to proving phase
     setProofState("PROVING");
     addLog("", "debug");
-    addLog("▶ PHASE 2: ZERO-KNOWLEDGE PROOF CONSTRUCTION", "info");
+    addLog("▶ SIMULATED PHASE 2: PROOF CONSTRUCTION", "info");
     addLog("", "debug");
 
     // Proving phase
     const provingSteps = [
-      { delay: 1200, msg: "Submitting witness to remote PXE node...", level: "info" as const },
-      { delay: 1400, msg: "PXE: Compiling Noir circuit (identity_verification)", level: "debug" as const },
-      { delay: 1600, msg: "PXE: Constraint system generated (540 gates)", level: "debug" as const },
-      { delay: 1800, msg: "PXE: Executing constraint solver...", level: "info" as const },
-      { delay: 2000, msg: "PXE: Constraint satisfaction verified", level: "success" as const },
-      { delay: 2200, msg: "PXE: Barretenberg prover initialized", level: "debug" as const },
-      { delay: 2400, msg: "PXE: Proof vector generated (1024 bytes)", level: "debug" as const },
-      { delay: 2600, msg: "PXE: Proof compression complete", level: "success" as const },
-      { delay: 2800, msg: "Receiving proof from PXE node...", level: "info" as const },
-      { delay: 3000, msg: "Proof received: 0x4b2d8f1a7c3e9d5b2a1f6e4c8d3a7b9f...", level: "debug" as const },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Send a witness to a proving service",
+        level: "info" as const,
+      },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Execute circuit constraints",
+        level: "debug" as const,
+      },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Receive an illustrative proof result",
+        level: "success" as const,
+      },
     ];
 
     for (const step of provingSteps) {
@@ -139,29 +171,34 @@ export default function HomeScreen() {
       addLog(step.msg, step.level);
     }
 
-    // Transition to success phase
-    setProofState("SUCCESS");
     addLog("", "debug");
-    addLog("▶ PHASE 3: PROOF VERIFICATION", "info");
+    addLog("▶ SIMULATED PHASE 3: VERIFICATION", "info");
     addLog("", "debug");
 
     // Verification phase
     const verificationSteps = [
-      { delay: 3200, msg: "Loading verification key from circuit...", level: "info" as const },
-      { delay: 3400, msg: "Verification key: 0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d", level: "debug" as const },
-      { delay: 3600, msg: "Executing proof verification algorithm...", level: "info" as const },
-      { delay: 3800, msg: "Pairing check: e(proof, vk) = 1 ✓", level: "success" as const },
-      { delay: 4000, msg: "Public input validation: PASS", level: "success" as const },
-      { delay: 4200, msg: "Proof Validated & Verified by Remote PXE Node!", level: "success" as const },
-      { delay: 4400, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
-      { delay: 4600, msg: "PROOF GENERATION COMPLETE", level: "success" as const },
-      { delay: 4800, msg: "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", level: "debug" as const },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Load a verification key",
+        level: "info" as const,
+      },
+      {
+        delay: 250,
+        msg: "[SIMULATED] Evaluate a verification result",
+        level: "success" as const,
+      },
+      {
+        delay: 250,
+        msg: "SIMULATION COMPLETE — RESULT IS NOT A PROOF",
+        level: "warning" as const,
+      },
     ];
 
     for (const step of verificationSteps) {
       await new Promise((resolve) => setTimeout(resolve, step.delay));
       addLog(step.msg, step.level);
     }
+    setProofState("SUCCESS");
   }, [proofState, addLog]);
 
   // Reset to idle state
@@ -190,7 +227,9 @@ export default function HomeScreen() {
 
     return (
       <View className="flex-row gap-2 px-3 py-0.5">
-        <Text className="text-xs text-gray-600 w-16 font-mono">{item.timestamp}</Text>
+        <Text className="text-xs text-gray-600 w-16 font-mono">
+          {item.timestamp}
+        </Text>
         <Text className={`flex-1 text-xs font-mono ${levelColors[item.level]}`}>
           {item.message && `${levelPrefixes[item.level]} ${item.message}`}
         </Text>
@@ -199,10 +238,10 @@ export default function HomeScreen() {
   };
 
   const stateButtonText = {
-    IDLE: "Generate Identity Proof",
-    WITNESS_GEN: "Computing Noir Witness Fields via Poseidon...",
-    PROVING: "Constructing ZK Proof via Aztec Sandbox Matrix...",
-    SUCCESS: "Proof Validated & Verified by Remote PXE Node!",
+    IDLE: "Run Proof Flow Simulation",
+    WITNESS_GEN: "Simulating Witness Construction...",
+    PROVING: "Simulating Remote Proving...",
+    SUCCESS: "Simulation Complete (No Proof Generated)",
     ERROR: "Error - Try Again",
   };
 
@@ -216,20 +255,30 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer className="p-4" containerClassName="bg-black">
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+      >
         <View className="flex-1 gap-6">
           {/* Header */}
           <View className="gap-1">
-            <Text className="text-3xl font-bold text-white">Aztec Identity Proof</Text>
+            <Text className="text-3xl font-bold text-white">
+              Kinhold Proof UX Sandbox
+            </Text>
             <Text className="text-sm text-gray-400">
-              Enterprise-grade zero-knowledge proof generation
+              UI simulation for evaluating a future mobile proving flow
+            </Text>
+            <Text className="text-xs text-yellow-400">
+              This prototype does not generate or verify cryptographic proofs.
             </Text>
           </View>
 
           {/* PXE Node Status */}
           <View className="bg-gray-900 rounded-lg p-4 border border-gray-800">
             <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-sm font-semibold text-white">PXE Node Status</Text>
+              <Text className="text-sm font-semibold text-white">
+                Experimental PXE Adapter
+              </Text>
               <View className="flex-row items-center gap-2">
                 <View
                   className={`w-2.5 h-2.5 rounded-full ${
@@ -245,14 +294,16 @@ export default function HomeScreen() {
                     ? `Connected (${nodeInfo.latency}ms)`
                     : nodeInfo.status === "checking"
                       ? "Checking..."
-                      : "Disconnected"}
+                      : nodeInfo.status === "not_configured"
+                        ? "Not configured"
+                        : "Disconnected"}
                 </Text>
               </View>
             </View>
             <Text className="text-xs text-gray-500">
               {nodeInfo.status === "connected"
-                ? "Remote PXE infrastructure online"
-                : "Local simulation mode active"}
+                ? "Health method responded; Aztec compatibility and proving are not verified"
+                : "The proof-flow simulation does not require a PXE endpoint"}
             </Text>
           </View>
 
@@ -277,33 +328,42 @@ export default function HomeScreen() {
               onPress={handleReset}
               className="py-3 px-6 rounded-lg border border-gray-700 items-center justify-center"
             >
-              <Text className="text-sm font-semibold text-gray-300">Generate Another Proof</Text>
+              <Text className="text-sm font-semibold text-gray-300">
+                Run Simulation Again
+              </Text>
             </TouchableOpacity>
           )}
 
-          {/* Circuit Specification */}
+          {/* Circuit sketch status */}
           <View className="bg-gray-900 rounded-lg p-4 border border-gray-800 gap-3">
-            <Text className="text-sm font-semibold text-white">Circuit Specification</Text>
+            <Text className="text-sm font-semibold text-white">
+              Circuit Sketch Status
+            </Text>
+            <Text className="text-xs text-yellow-400">
+              Not compiled, measured, or exercised by this app.
+            </Text>
             <View className="gap-2">
               <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Hash Function:</Text>
-                <Text className="text-xs text-gray-300 font-mono">Poseidon (BN254)</Text>
+                <Text className="text-xs text-gray-500">Source intent:</Text>
+                <Text className="text-xs text-gray-300 font-mono">
+                  Identity commitment
+                </Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Input Size:</Text>
-                <Text className="text-xs text-gray-300 font-mono">32 bytes (secret)</Text>
+                <Text className="text-xs text-gray-500">Noir validation:</Text>
+                <Text className="text-xs text-gray-300 font-mono">Not run</Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Constraint Gates:</Text>
-                <Text className="text-xs text-gray-300 font-mono">540 gates</Text>
+                <Text className="text-xs text-gray-500">Proof API:</Text>
+                <Text className="text-xs text-gray-300 font-mono">
+                  Not wired
+                </Text>
               </View>
               <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Proof Size:</Text>
-                <Text className="text-xs text-gray-300 font-mono">1024 bytes</Text>
-              </View>
-              <View className="flex-row justify-between">
-                <Text className="text-xs text-gray-500">Verification Time:</Text>
-                <Text className="text-xs text-gray-300 font-mono">~50-100ms</Text>
+                <Text className="text-xs text-gray-500">Result:</Text>
+                <Text className="text-xs text-gray-300 font-mono">
+                  Simulation only
+                </Text>
               </View>
             </View>
           </View>
@@ -312,16 +372,18 @@ export default function HomeScreen() {
           <View className="flex-1 min-h-80 bg-black rounded-lg border border-gray-800 overflow-hidden">
             <View className="bg-gray-900 px-3 py-2 border-b border-gray-800 flex-row items-center justify-between">
               <Text className="text-xs font-semibold text-gray-300 font-mono">
-                PROOF_GENERATION_LOG
+                PROOF_FLOW_SIMULATION_LOG
               </Text>
-              <Text className="text-xs text-gray-600 font-mono">[{logs.length}]</Text>
+              <Text className="text-xs text-gray-600 font-mono">
+                [{logs.length}]
+              </Text>
             </View>
 
             {logs.length === 0 ? (
               <View className="flex-1 items-center justify-center px-4">
                 <Text className="text-xs text-gray-600 text-center font-mono">
                   {proofState === "IDLE"
-                    ? "Click 'Generate Identity Proof' to initiate workflow"
+                    ? "Run the simulation to preview UI state transitions"
                     : "Processing..."}
                 </Text>
               </View>
@@ -341,10 +403,10 @@ export default function HomeScreen() {
           {/* Footer */}
           <View className="gap-1 pb-4">
             <Text className="text-xs text-gray-600 text-center font-mono">
-              Aztec Protocol v0.30 | Identity Verification Circuit
+              Kinhold mobile sandbox | exploratory prototype
             </Text>
             <Text className="text-xs text-gray-700 text-center font-mono">
-              Proofs generated locally, verified by remote PXE node
+              No Aztec SDK is installed; no real proof path is wired
             </Text>
           </View>
         </View>
