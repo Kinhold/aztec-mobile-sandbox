@@ -1,0 +1,17 @@
+[package]
+name = "identity_verification"
+type = "bin"
+authors = ["StationaryDev37"]
+compiler_version = "0.30"
+description = "Unverified identity commitment circuit sketch"
+
+[dependencies]
+std = { tag = "v0.30.0" }
+
+[profile.dev]
+# Development profile: faster compilation, less optimization
+opt_level = 0
+
+[profile.release]
+# Release profile: optimized for proof generation
+opt_level = 2
